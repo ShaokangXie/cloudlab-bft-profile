@@ -1,14 +1,13 @@
 # CloudLab configurable-node BFT profile
 
-This directory contains a repository-based CloudLab profile for running a BFT experiment on a configurable number of `d710` machines.
+This directory contains a repository-based CloudLab profile for running a BFT experiment on a configurable number of CloudLab machines.
 
 ## Files
 
 - `profile.py`: CloudLab profile entrypoint
-- `ansible/bootstrap.yml`: CloudLab Ansible playbook that invokes the bootstrap script on each node
 - `scripts/bootstrap.sh`: runs on each node at boot, installs Docker, pulls the image, and starts a container
 
-The Ansible playbook is configured with `become=root`, so the bootstrap script normally runs with root privileges on the nodes.
+The profile uses a direct CloudLab `Execute` startup service to invoke `scripts/bootstrap.sh` on each node.
 
 ## What this profile does
 
@@ -25,7 +24,7 @@ Their private LAN addresses are assigned as:
 
 Each node will:
 
-1. run a CloudLab Ansible playbook during startup
+1. run the bootstrap script during startup
 2. install Docker if needed
 3. optionally log into Docker Hub
 4. pull the image you specify
@@ -56,7 +55,7 @@ shaokangxie/oesdk_resdb:2024_11_17
 
 Because it is private, you should provide Docker Hub credentials when instantiating the profile.
 
-The profile stores `dockerhub_token` as an encrypted CloudLab password resource and passes it into the Ansible playbook via `source="password"`. The token is no longer fetched with `geni-get`, and it does not need to appear in the generated bootstrap command line.
+To keep the startup path reliable, the profile passes `dockerhub_user` and `dockerhub_token` directly to the bootstrap command that CloudLab executes on the node. That means the token can appear in generated manifests or spew logs for the experiment, so you should use a short-lived token and revoke it after the run.
 
 ## How to create a Docker Hub access token
 
@@ -97,7 +96,7 @@ At instantiate time, fill in:
 - `container_ssh_host_port`: `2222` by default, or `0` to disable SSH forwarding
 - `container_published_ports`: optional extra mappings like `8080:8080,9000:9000`
 - `dockerhub_user`: your Docker Hub username
-- `dockerhub_token`: the personal access token you just created; this is stored as an encrypted password resource
+- `dockerhub_token`: the personal access token you just created; this is passed to the bootstrap command at startup
 
 Example `docker_cmd` values:
 
@@ -132,7 +131,7 @@ On other machines, the container names continue as `bft-node-1`, `bft-node-2`, a
 
 ## Security note
 
-CloudLab hidden parameters are better than hard-coding secrets in Git, but they are still operational credentials that should be short-lived and scoped minimally. The safest pattern is:
+This profile now favors a startup path that is known to execute reliably on the testbed. The tradeoff is that Docker Hub credentials may be visible in experiment control-plane artifacts. The safest pattern is:
 
 - use a short-lived Docker Hub PAT
 - give it the smallest possible scope

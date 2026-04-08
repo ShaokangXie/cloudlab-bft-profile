@@ -1,17 +1,16 @@
-"""CloudLab repository-based profile for a configurable-node d710 BFT experiment.
+"""CloudLab repository-based profile for a configurable-node BFT experiment.
 
 Each node:
 - joins the same private LAN
-- runs an Ansible playbook during startup
-- optionally logs into Docker Hub using an encrypted password resource
+- runs the bootstrap script during startup
+- optionally logs into Docker Hub for private image access
 - pulls the requested image
 - starts one container with node-specific environment variables
 """
 
 import geni.portal as portal
 import geni.rspec.pg as rspec
-import geni.rspec.igext as igext
-import geni.rspec.emulab.ansible as ansible
+import shlex
 
 
 pc = portal.Context()
@@ -136,47 +135,33 @@ lan = request.LAN("bft-lan")
 node_ips = ["10.10.1.{}".format(i + 1) for i in range(params.num_nodes)]
 all_peers = ",".join(node_ips)
 
-request.addResource(ansible.Playbook("bootstrap.yml", path="ansible", become="root"))
 
-request.addResource(ansible.Override("num_nodes", value=str(params.num_nodes)))
-request.addResource(ansible.Override("peers_csv", value=all_peers))
-request.addResource(ansible.Override("docker_image", value=params.docker_image))
-request.addResource(ansible.Override("docker_cmd", value=params.docker_cmd))
-request.addResource(ansible.Override("container_prefix", value=params.container_prefix))
-request.addResource(
-    ansible.Override(
-        "mount_repository",
-        value="1" if params.mount_repository else "0",
+def build_bootstrap_command(node_index, node_ip):
+    args = [
+        str(node_index),
+        str(params.num_nodes),
+        node_ip,
+        all_peers,
+        params.docker_image,
+        "{}-{}".format(params.container_prefix, node_index),
+        "1" if params.mount_repository else "0",
+        params.docker_cmd,
+        params.docker_network_mode,
+        str(params.container_ssh_host_port),
+        params.container_published_ports,
+        params.dockerhub_user,
+        params.dockerhub_token,
+    ]
+    quoted_args = " ".join(shlex.quote(arg) for arg in args)
+    return (
+        "for _ in $(seq 1 60); do "
+        "if [ -f /local/repository/scripts/bootstrap.sh ]; then break; fi; "
+        "sleep 2; "
+        "done; "
+        "[ -f /local/repository/scripts/bootstrap.sh ] || "
+        "{ echo 'bootstrap.sh was not cloned to /local/repository' >&2; exit 1; }; "
+        "/bin/bash /local/repository/scripts/bootstrap.sh {}".format(quoted_args)
     )
-)
-request.addResource(
-    ansible.Override("docker_network_mode", value=params.docker_network_mode)
-)
-request.addResource(
-    ansible.Override(
-        "container_ssh_host_port",
-        value=str(params.container_ssh_host_port),
-    )
-)
-request.addResource(
-    ansible.Override(
-        "container_published_ports",
-        value=params.container_published_ports,
-    )
-)
-request.addResource(ansible.Override("dockerhub_user", value=params.dockerhub_user))
-
-if params.dockerhub_token:
-    request.addResource(igext.Password(name="dockerhub_token", text=params.dockerhub_token))
-
-request.addResource(
-    ansible.Override(
-        "dockerhub_token",
-        source="password",
-        source_name="dockerhub_token",
-        on_empty=False,
-    )
-)
 
 for i in range(params.num_nodes):
     node = request.RawPC("node{}".format(i))
@@ -189,7 +174,11 @@ for i in range(params.num_nodes):
     iface.addAddress(rspec.IPv4Address(node_ips[i], "255.255.255.0"))
     lan.addInterface(iface)
 
-    node.addOverride(ansible.Override("node_index", value=str(i)))
-    node.addOverride(ansible.Override("node_ip", value=node_ips[i]))
+    node.addService(
+        rspec.Execute(
+            shell="/bin/bash",
+            command=build_bootstrap_command(i, node_ips[i]),
+        )
+    )
 
 pc.printRequestRSpec(request)
