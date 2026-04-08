@@ -160,10 +160,6 @@ def build_bootstrap_command(node_index, node_ip):
     ]
     quoted_args = " ".join(shell_quote(arg) for arg in args)
     command_prefix = (
-        "for _ in $(seq 1 60); do "
-        "if [ -f /local/repository/scripts/bootstrap.sh ]; then break; fi; "
-        "sleep 2; "
-        "done; "
         "[ -f /local/repository/scripts/bootstrap.sh ] || "
         "{ echo 'bootstrap.sh was not cloned to /local/repository' >&2; exit 1; }; "
     )
