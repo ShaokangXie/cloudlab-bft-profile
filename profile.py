@@ -10,7 +10,6 @@ Each node:
 
 import geni.portal as portal
 import geni.rspec.pg as rspec
-import shlex
 
 
 pc = portal.Context()
@@ -136,6 +135,13 @@ node_ips = ["10.10.1.{}".format(i + 1) for i in range(params.num_nodes)]
 all_peers = ",".join(node_ips)
 
 
+def shell_quote(value):
+    value = str(value)
+    if value == "":
+        return "''"
+    return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
 def build_bootstrap_command(node_index, node_ip):
     args = [
         str(node_index),
@@ -152,7 +158,7 @@ def build_bootstrap_command(node_index, node_ip):
         params.dockerhub_user,
         params.dockerhub_token,
     ]
-    quoted_args = " ".join(shlex.quote(arg) for arg in args)
+    quoted_args = " ".join(shell_quote(arg) for arg in args)
     return (
         "for _ in $(seq 1 60); do "
         "if [ -f /local/repository/scripts/bootstrap.sh ]; then break; fi; "
