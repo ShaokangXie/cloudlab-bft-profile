@@ -60,12 +60,12 @@ pc.defineParameter(
     "docker_network_mode",
     "Docker network mode: bridge or host",
     portal.ParameterType.STRING,
-    "bridge",
+    "host",
 )
 
 pc.defineParameter(
     "container_ssh_host_port",
-    "Host port forwarded to container port 22; set 0 to disable",
+    "SSH port exposed on the host; set 0 to disable container SSH setup",
     portal.ParameterType.INTEGER,
     2222,
 )

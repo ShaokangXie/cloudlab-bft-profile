@@ -19,6 +19,7 @@ CLI_DOCKERHUB_USER="${12:-}"
 CLI_DOCKERHUB_TOKEN="${13:-}"
 DOCKERHUB_USER="${CLI_DOCKERHUB_USER:-${DOCKERHUB_USER:-}}"
 DOCKERHUB_TOKEN="${CLI_DOCKERHUB_TOKEN:-${DOCKERHUB_TOKEN:-}}"
+AUTHORIZED_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID7Nv8mMG9bCbPZZwpxCarBfHAwhwJmMzxxD0VMyS2rB shaokang@Shaokangs-MacBook-Pro.local"
 
 if [ "$(id -u)" -eq 0 ]; then
   SUDO=""
@@ -28,6 +29,10 @@ fi
 
 log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
+}
+
+service_name() {
+  printf 'bft-bootstrap-%s.service' "${CONTAINER_NAME}"
 }
 
 retry() {
@@ -126,11 +131,83 @@ start_container() {
     /bin/sh -lc "${DOCKER_CMD}"
 }
 
+configure_container_ssh() {
+  local ssh_port="$1"
+
+  if [ "${CONTAINER_SSH_HOST_PORT}" = "0" ]; then
+    log "Container SSH setup disabled because container_ssh_host_port=0"
+    return 0
+  fi
+
+  if ! ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "command -v sshd >/dev/null 2>&1"; then
+    log "sshd is not installed in ${CONTAINER_NAME}; skipping SSH setup"
+    return 0
+  fi
+
+  retry ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "mkdir -p /run/sshd /root/.ssh && chmod 700 /root/.ssh && touch /root/.ssh/authorized_keys"
+  printf '%s\n' "${AUTHORIZED_KEY}" | ${SUDO} docker exec -i "${CONTAINER_NAME}" sh -lc "cat >> /root/.ssh/authorized_keys && sort -u /root/.ssh/authorized_keys -o /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys"
+  ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "ssh-keygen -A >/dev/null 2>&1 || true"
+  ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "pkill -f '/usr/sbin/sshd -D' >/dev/null 2>&1 || true"
+  ${SUDO} docker exec -d "${CONTAINER_NAME}" /usr/sbin/sshd -D -p "${ssh_port}" >/dev/null
+  log "Container SSH started on port ${ssh_port}"
+}
+
+install_boot_service() {
+  local wrapper_path="/usr/local/sbin/bft-bootstrap-${CONTAINER_NAME}.sh"
+  local unit_path="/etc/systemd/system/$(service_name)"
+
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf 'set -euo pipefail\n'
+    printf 'exec /bin/bash /local/repository/scripts/bootstrap.sh'
+    printf ' %q' "${NODE_INDEX}"
+    printf ' %q' "${TOTAL_NODES}"
+    printf ' %q' "${NODE_IP}"
+    printf ' %q' "${PEERS_CSV}"
+    printf ' %q' "${DOCKER_IMAGE}"
+    printf ' %q' "${CONTAINER_NAME}"
+    printf ' %q' "${MOUNT_REPOSITORY}"
+    printf ' %q' "${DOCKER_CMD}"
+    printf ' %q' "${DOCKER_NETWORK_MODE}"
+    printf ' %q' "${CONTAINER_SSH_HOST_PORT}"
+    printf ' %q' "${CONTAINER_PUBLISHED_PORTS}"
+    printf ' %q' "${DOCKERHUB_USER}"
+    printf ' %q' "${DOCKERHUB_TOKEN}"
+    printf '\n'
+  } | ${SUDO} tee "${wrapper_path}" >/dev/null
+  ${SUDO} chmod 700 "${wrapper_path}"
+
+  cat <<EOF | ${SUDO} tee "${unit_path}" >/dev/null
+[Unit]
+Description=Bootstrap ${CONTAINER_NAME} on boot
+After=local-fs.target network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=${wrapper_path}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  ${SUDO} systemctl daemon-reload
+  ${SUDO} systemctl enable "$(service_name)"
+  log "Installed boot service $(service_name)"
+}
+
 log "Bootstrap starting on node index ${NODE_INDEX} (${NODE_IP})"
 install_docker
+install_boot_service
 docker_login_if_needed
 retry ${SUDO} docker pull "${DOCKER_IMAGE}"
 ${SUDO} docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
 start_container
+if [ "${DOCKER_NETWORK_MODE}" = "host" ]; then
+  configure_container_ssh "${CONTAINER_SSH_HOST_PORT}"
+else
+  configure_container_ssh "22"
+fi
 ${SUDO} docker ps
 log "Bootstrap completed for ${CONTAINER_NAME}"
