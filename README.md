@@ -42,7 +42,7 @@ The bootstrap script also starts `sshd` inside the container and installs the co
 This means:
 
 - SSH to host port `22` reaches the host itself
-- SSH to host port `2222` reaches the container
+- with the default `docker_network_mode=host`, the container's `sshd` itself listens on host port `2222`
 
 If `mount_repository=true`, the CloudLab repository checkout is mounted into the container at `/workspace`.
 
@@ -94,7 +94,7 @@ At instantiate time, fill in:
 - `docker_image`: `shaokangxie/oesdk_resdb:2024_11_17`
 - `docker_cmd`: your container start command
 - `docker_network_mode`: `host` by default; use `bridge` only if you specifically want Docker port publishing
-- `container_ssh_host_port`: `2222` by default, or `0` to disable container SSH setup
+- `container_ssh_host_port`: `2222` by default; in `host` mode this is the port that container `sshd` binds directly
 - `container_published_ports`: optional extra mappings like `8080:8080,9000:9000`
 - `dockerhub_user`: your Docker Hub username
 - `dockerhub_token`: the personal access token you just created; this is passed to the bootstrap command at startup
@@ -115,7 +115,7 @@ If your BFT service also needs inbound ports from other nodes, add them to `cont
 8080:8080,10000:10000
 ```
 
-With the default `docker_network_mode=host`, the container shares the host network namespace, so the container's `sshd` listens directly on host port `2222`. If you switch to `bridge`, the profile falls back to Docker's `-p 2222:22` mapping.
+With the default `docker_network_mode=host`, the container shares the host network namespace, so there is no Docker SSH port forwarding step at all. Instead, the bootstrap script starts container `sshd` directly on port `2222`. If you switch to `bridge`, SSH is not auto-published; use `container_published_ports` only for the ports you explicitly want Docker to publish.
 
 The host also gets a `systemd` unit named like `bft-bootstrap-bft-node-0.service`. On reboot, that unit reruns the bootstrap script so Docker, the container, and container SSH come back automatically.
 

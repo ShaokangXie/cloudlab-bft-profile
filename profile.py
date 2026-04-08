@@ -65,7 +65,7 @@ pc.defineParameter(
 
 pc.defineParameter(
     "container_ssh_host_port",
-    "SSH port exposed on the host; set 0 to disable container SSH setup",
+    "Container SSH port; with host networking, sshd listens directly on this port",
     portal.ParameterType.INTEGER,
     2222,
 )

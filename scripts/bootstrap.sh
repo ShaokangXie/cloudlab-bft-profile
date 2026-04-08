@@ -13,7 +13,7 @@ CONTAINER_NAME="${6:?missing CONTAINER_NAME}"
 MOUNT_REPOSITORY="${7:?missing MOUNT_REPOSITORY}"
 DOCKER_CMD="${8:-sleep infinity}"
 DOCKER_NETWORK_MODE="${9:-bridge}"
-CONTAINER_SSH_HOST_PORT="${10:-2222}"
+CONTAINER_SSH_PORT="${10:-2222}"
 CONTAINER_PUBLISHED_PORTS="${11:-}"
 CLI_DOCKERHUB_USER="${12:-}"
 CLI_DOCKERHUB_TOKEN="${13:-}"
@@ -98,14 +98,11 @@ start_container() {
 
   if [ "${DOCKER_NETWORK_MODE}" = "host" ]; then
     docker_run_args+=(--network host)
-    if [ "${CONTAINER_SSH_HOST_PORT}" != "0" ]; then
-      log "docker_network_mode=host; skipping SSH port publishing because host networking does not support -p mappings"
+    if [ "${CONTAINER_SSH_PORT}" != "0" ]; then
+      log "docker_network_mode=host; container SSH will listen directly on port ${CONTAINER_SSH_PORT}"
     fi
   else
     docker_run_args+=(--network bridge)
-    if [ "${CONTAINER_SSH_HOST_PORT}" != "0" ]; then
-      docker_run_args+=(-p "${CONTAINER_SSH_HOST_PORT}:22")
-    fi
 
     if [ -n "${CONTAINER_PUBLISHED_PORTS}" ]; then
       local old_ifs="${IFS}"
@@ -133,8 +130,10 @@ start_container() {
 
 configure_container_ssh() {
   local ssh_port="$1"
+  local escaped_authorized_key
+  escaped_authorized_key=$(printf "%s" "${AUTHORIZED_KEY}" | sed "s/'/'\"'\"'/g")
 
-  if [ "${CONTAINER_SSH_HOST_PORT}" = "0" ]; then
+  if [ "${CONTAINER_SSH_PORT}" = "0" ]; then
     log "Container SSH setup disabled because container_ssh_host_port=0"
     return 0
   fi
@@ -144,8 +143,9 @@ configure_container_ssh() {
     return 0
   fi
 
+  log "Configuring container SSH on port ${ssh_port}"
   retry ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "mkdir -p /run/sshd /root/.ssh && chmod 700 /root/.ssh && touch /root/.ssh/authorized_keys"
-  printf '%s\n' "${AUTHORIZED_KEY}" | ${SUDO} docker exec -i "${CONTAINER_NAME}" sh -lc "cat >> /root/.ssh/authorized_keys && sort -u /root/.ssh/authorized_keys -o /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys"
+  ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "grep -qxF '${escaped_authorized_key}' /root/.ssh/authorized_keys 2>/dev/null || printf '%s\n' '${escaped_authorized_key}' >> /root/.ssh/authorized_keys; chmod 600 /root/.ssh/authorized_keys"
   ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "ssh-keygen -A >/dev/null 2>&1 || true"
   ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "pkill -f '/usr/sbin/sshd -D' >/dev/null 2>&1 || true"
   ${SUDO} docker exec -d "${CONTAINER_NAME}" /usr/sbin/sshd -D -p "${ssh_port}" >/dev/null
@@ -169,7 +169,7 @@ install_boot_service() {
     printf ' %q' "${MOUNT_REPOSITORY}"
     printf ' %q' "${DOCKER_CMD}"
     printf ' %q' "${DOCKER_NETWORK_MODE}"
-    printf ' %q' "${CONTAINER_SSH_HOST_PORT}"
+    printf ' %q' "${CONTAINER_SSH_PORT}"
     printf ' %q' "${CONTAINER_PUBLISHED_PORTS}"
     printf ' %q' "${DOCKERHUB_USER}"
     printf ' %q' "${DOCKERHUB_TOKEN}"
@@ -204,10 +204,6 @@ docker_login_if_needed
 retry ${SUDO} docker pull "${DOCKER_IMAGE}"
 ${SUDO} docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
 start_container
-if [ "${DOCKER_NETWORK_MODE}" = "host" ]; then
-  configure_container_ssh "${CONTAINER_SSH_HOST_PORT}"
-else
-  configure_container_ssh "22"
-fi
+configure_container_ssh "${CONTAINER_SSH_PORT}"
 ${SUDO} docker ps
 log "Bootstrap completed for ${CONTAINER_NAME}"
