@@ -31,6 +31,15 @@ Each node will:
    - `PEERS_CSV`
    - `TOTAL_NODES`
 
+By default the container runs in Docker `bridge` mode and publishes:
+
+- host `2222` -> container `22` for SSH into the container
+
+This means:
+
+- SSH to host port `22` reaches the host itself
+- SSH to host port `2222` reaches the container
+
 If `mount_repository=true`, the CloudLab repository checkout is mounted into the container at `/workspace`.
 
 ## Your private Docker image
@@ -78,6 +87,9 @@ At instantiate time, fill in:
 - `num_nodes`: how many nodes you want to allocate
 - `docker_image`: `shaokangxie/oesdk_resdb:2024_11_17`
 - `docker_cmd`: your container start command
+- `docker_network_mode`: `bridge` if you want port forwarding, `host` if you want the container to share the host network
+- `container_ssh_host_port`: `2222` by default, or `0` to disable SSH forwarding
+- `container_published_ports`: optional extra mappings like `8080:8080,9000:9000`
 - `dockerhub_user`: your Docker Hub username
 - `dockerhub_token`: the personal access token you just created
 
@@ -91,6 +103,14 @@ sleep infinity
 cd /workspace && ./scripts/run_bft.sh
 ```
 
+If your BFT service also needs inbound ports from other nodes, add them to `container_published_ports`. For example:
+
+```sh
+8080:8080,10000:10000
+```
+
+If you switch to `docker_network_mode=host`, the host and container share the same network namespace, so Docker cannot publish `2222:22`. In that mode, host port `22` still belongs to the host, and there is no separate forwarded SSH port for the container.
+
 ## How to verify after startup
 
 SSH into a node and run:
@@ -99,6 +119,7 @@ SSH into a node and run:
 docker ps
 sudo cat /var/log/bft-bootstrap.log
 docker logs bft-node-0
+ssh -p 2222 localhost
 ```
 
 On other machines, the container names continue as `bft-node-1`, `bft-node-2`, and so on.

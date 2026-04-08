@@ -62,6 +62,27 @@ pc.defineParameter(
 )
 
 pc.defineParameter(
+    "docker_network_mode",
+    "Docker network mode: bridge or host",
+    portal.ParameterType.STRING,
+    "bridge",
+)
+
+pc.defineParameter(
+    "container_ssh_host_port",
+    "Host port forwarded to container port 22; set 0 to disable",
+    portal.ParameterType.INTEGER,
+    2222,
+)
+
+pc.defineParameter(
+    "container_published_ports",
+    "Extra published ports in host:container form, comma-separated",
+    portal.ParameterType.STRING,
+    "",
+)
+
+pc.defineParameter(
     "dockerhub_user",
     "Docker Hub username for private image pulls",
     portal.ParameterType.STRING,
@@ -95,6 +116,14 @@ if params.num_nodes > 250:
         )
     )
 
+if params.docker_network_mode not in ["bridge", "host"]:
+    pc.reportError(
+        portal.ParameterError(
+            "docker_network_mode must be either bridge or host",
+            ["docker_network_mode"],
+        )
+    )
+
 request = pc.makeRequestRSpec()
 
 lan = request.LAN("bft-lan")
@@ -119,6 +148,7 @@ for i in range(params.num_nodes):
         "/bin/bash /local/repository/scripts/bootstrap.sh "
         "{node_index} {total_nodes} {node_ip} {peers_csv} {docker_image} "
         "{container_name} {mount_repository} {docker_cmd} "
+        "{docker_network_mode} {container_ssh_host_port} {container_published_ports} "
         "{dockerhub_user} {dockerhub_token}"
     ).format(
         node_index=i,
@@ -129,6 +159,9 @@ for i in range(params.num_nodes):
         container_name=shq(container_name),
         mount_repository="1" if params.mount_repository else "0",
         docker_cmd=shq(params.docker_cmd),
+        docker_network_mode=shq(params.docker_network_mode),
+        container_ssh_host_port=params.container_ssh_host_port,
+        container_published_ports=shq(params.container_published_ports),
         dockerhub_user=shq(params.dockerhub_user),
         dockerhub_token=shq(params.dockerhub_token),
     )

@@ -11,8 +11,11 @@ DOCKER_IMAGE="${5:?missing DOCKER_IMAGE}"
 CONTAINER_NAME="${6:?missing CONTAINER_NAME}"
 MOUNT_REPOSITORY="${7:?missing MOUNT_REPOSITORY}"
 DOCKER_CMD="${8:-sleep infinity}"
-DOCKERHUB_USER="${9:-}"
-DOCKERHUB_TOKEN="${10:-}"
+DOCKER_NETWORK_MODE="${9:-bridge}"
+CONTAINER_SSH_HOST_PORT="${10:-2222}"
+CONTAINER_PUBLISHED_PORTS="${11:-}"
+DOCKERHUB_USER="${12:-}"
+DOCKERHUB_TOKEN="${13:-}"
 
 log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
@@ -73,12 +76,36 @@ start_container() {
     --name "${CONTAINER_NAME}"
     --hostname "${CONTAINER_NAME}"
     --restart unless-stopped
-    --network host
     -e NODE_INDEX="${NODE_INDEX}"
     -e NODE_IP="${NODE_IP}"
     -e PEERS_CSV="${PEERS_CSV}"
     -e TOTAL_NODES="${TOTAL_NODES}"
   )
+
+  if [ "${DOCKER_NETWORK_MODE}" = "host" ]; then
+    docker_run_args+=(--network host)
+    if [ "${CONTAINER_SSH_HOST_PORT}" != "0" ]; then
+      log "docker_network_mode=host; skipping SSH port publishing because host networking does not support -p mappings"
+    fi
+  else
+    docker_run_args+=(--network bridge)
+    if [ "${CONTAINER_SSH_HOST_PORT}" != "0" ]; then
+      docker_run_args+=(-p "${CONTAINER_SSH_HOST_PORT}:22")
+    fi
+
+    if [ -n "${CONTAINER_PUBLISHED_PORTS}" ]; then
+      local old_ifs="${IFS}"
+      IFS=','
+      read -r -a published_ports <<< "${CONTAINER_PUBLISHED_PORTS}"
+      IFS="${old_ifs}"
+      local published_port
+      for published_port in "${published_ports[@]}"; do
+        if [ -n "${published_port}" ]; then
+          docker_run_args+=(-p "${published_port}")
+        fi
+      done
+    fi
+  fi
 
   if [ "${MOUNT_REPOSITORY}" = "1" ]; then
     docker_run_args+=(-v /local/repository:/workspace)
