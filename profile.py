@@ -148,8 +148,7 @@ for i in range(params.num_nodes):
         "/bin/bash /local/repository/scripts/bootstrap.sh "
         "{node_index} {total_nodes} {node_ip} {peers_csv} {docker_image} "
         "{container_name} {mount_repository} {docker_cmd} "
-        "{docker_network_mode} {container_ssh_host_port} {container_published_ports} "
-        "{dockerhub_user} {dockerhub_token}"
+        "{docker_network_mode} {container_ssh_host_port} {container_published_ports}"
     ).format(
         node_index=i,
         total_nodes=params.num_nodes,
@@ -162,8 +161,6 @@ for i in range(params.num_nodes):
         docker_network_mode=shq(params.docker_network_mode),
         container_ssh_host_port=params.container_ssh_host_port,
         container_published_ports=shq(params.container_published_ports),
-        dockerhub_user=shq(params.dockerhub_user),
-        dockerhub_token=shq(params.dockerhub_token),
     )
 
     node.addService(rspec.Execute(shell="bash", command=cmd))

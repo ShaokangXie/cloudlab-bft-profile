@@ -52,6 +52,8 @@ shaokangxie/oesdk_resdb:2024_11_17
 
 Because it is private, you should provide Docker Hub credentials when instantiating the profile.
 
+The profile retrieves the hidden Docker Hub parameters on the node with `geni-get`, so they do not need to appear in the generated `execute` command line.
+
 ## How to create a Docker Hub access token
 
 I cannot generate the token on your behalf because it is tied to your Docker Hub account and is only shown once by Docker. You need to create it in the Docker web UI, then paste it into CloudLab when you instantiate the profile.
