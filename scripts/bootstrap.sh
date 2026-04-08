@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-exec > >(tee -a /var/log/bft-bootstrap.log) 2>&1
+LOG_FILE="${BOOTSTRAP_LOG_FILE:-/tmp/bft-bootstrap.log}"
+exec > >(tee -a "${LOG_FILE}") 2>&1
 
 NODE_INDEX="${1:?missing NODE_INDEX}"
 TOTAL_NODES="${2:?missing TOTAL_NODES}"
@@ -16,6 +17,12 @@ CONTAINER_SSH_HOST_PORT="${10:-2222}"
 CONTAINER_PUBLISHED_PORTS="${11:-}"
 DOCKERHUB_USER=""
 DOCKERHUB_TOKEN=""
+
+if [ "$(id -u)" -eq 0 ]; then
+  SUDO=""
+else
+  SUDO="sudo"
+fi
 
 log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
@@ -34,28 +41,28 @@ retry() {
 }
 
 cleanup_docker_auth() {
-  docker logout >/dev/null 2>&1 || true
-  rm -f /root/.docker/config.json || true
+  ${SUDO} docker logout >/dev/null 2>&1 || true
+  ${SUDO} rm -f /root/.docker/config.json || true
 }
 
 install_docker() {
   if ! command -v docker >/dev/null 2>&1; then
     export DEBIAN_FRONTEND=noninteractive
-    retry apt-get update
-    retry apt-get install -y docker.io
+    retry ${SUDO} apt-get update
+    retry ${SUDO} apt-get install -y docker.io
   fi
 
-  systemctl enable docker
-  systemctl restart docker
+  ${SUDO} systemctl enable docker
+  ${SUDO} systemctl restart docker
 
   for _ in $(seq 1 30); do
-    if docker info >/dev/null 2>&1; then
+    if ${SUDO} docker info >/dev/null 2>&1; then
       return 0
     fi
     sleep 2
   done
 
-  docker info >/dev/null 2>&1
+  ${SUDO} docker info >/dev/null 2>&1
 }
 
 docker_login_if_needed() {
@@ -66,8 +73,8 @@ docker_login_if_needed() {
 
   if [ -n "${DOCKERHUB_USER}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
     log "Logging into Docker Hub for private image access"
-    mkdir -p /root/.docker
-    printf '%s' "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USER}" --password-stdin >/dev/null
+    ${SUDO} mkdir -p /root/.docker
+    printf '%s' "${DOCKERHUB_TOKEN}" | ${SUDO} docker login -u "${DOCKERHUB_USER}" --password-stdin >/dev/null
     trap cleanup_docker_auth EXIT
   else
     log "No Docker Hub credentials provided; attempting anonymous pull"
@@ -116,7 +123,7 @@ start_container() {
     docker_run_args+=(-v /local/repository:/workspace)
   fi
 
-  docker run \
+  ${SUDO} docker run \
     "${docker_run_args[@]}" \
     "${DOCKER_IMAGE}" \
     /bin/sh -lc "${DOCKER_CMD}"
@@ -125,8 +132,8 @@ start_container() {
 log "Bootstrap starting on node index ${NODE_INDEX} (${NODE_IP})"
 install_docker
 docker_login_if_needed
-retry docker pull "${DOCKER_IMAGE}"
-docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+retry ${SUDO} docker pull "${DOCKER_IMAGE}"
+${SUDO} docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
 start_container
-docker ps
+${SUDO} docker ps
 log "Bootstrap completed for ${CONTAINER_NAME}"

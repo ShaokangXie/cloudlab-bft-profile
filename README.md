@@ -7,6 +7,8 @@ This directory contains a repository-based CloudLab profile for running a BFT ex
 - `profile.py`: CloudLab profile entrypoint
 - `scripts/bootstrap.sh`: runs on each node at boot, installs Docker, pulls the image, and starts a container
 
+The startup script runs as the experiment user, so privileged operations are executed with `sudo`.
+
 ## What this profile does
 
 When you instantiate the profile, CloudLab allocates `num_nodes` physical nodes.
@@ -118,9 +120,9 @@ If you switch to `docker_network_mode=host`, the host and container share the sa
 SSH into a node and run:
 
 ```sh
-docker ps
-sudo cat /var/log/bft-bootstrap.log
-docker logs bft-node-0
+sudo docker ps
+cat /tmp/bft-bootstrap.log
+sudo docker logs bft-node-0
 ssh -p 2222 localhost
 ```
 
