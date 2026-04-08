@@ -88,7 +88,6 @@ pc.defineParameter(
     portal.ParameterType.STRING,
     "",
     advanced=True,
-    hide=True,
 )
 
 pc.defineParameter(
@@ -97,7 +96,6 @@ pc.defineParameter(
     portal.ParameterType.STRING,
     "",
     advanced=True,
-    hide=True,
 )
 
 params = pc.bindParameters()
