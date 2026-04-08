@@ -5,9 +5,10 @@ This directory contains a repository-based CloudLab profile for running a BFT ex
 ## Files
 
 - `profile.py`: CloudLab profile entrypoint
+- `ansible/bootstrap.yml`: CloudLab Ansible playbook that invokes the bootstrap script on each node
 - `scripts/bootstrap.sh`: runs on each node at boot, installs Docker, pulls the image, and starts a container
 
-The startup script runs as the experiment user, so privileged operations are executed with `sudo`.
+The Ansible playbook is configured with `become=root`, so the bootstrap script normally runs with root privileges on the nodes.
 
 ## What this profile does
 
@@ -24,10 +25,11 @@ Their private LAN addresses are assigned as:
 
 Each node will:
 
-1. install Docker if needed
-2. optionally log into Docker Hub
-3. pull the image you specify
-4. start one container with:
+1. run a CloudLab Ansible playbook during startup
+2. install Docker if needed
+3. optionally log into Docker Hub
+4. pull the image you specify
+5. start one container with:
    - `NODE_INDEX`
    - `NODE_IP`
    - `PEERS_CSV`
@@ -54,7 +56,7 @@ shaokangxie/oesdk_resdb:2024_11_17
 
 Because it is private, you should provide Docker Hub credentials when instantiating the profile.
 
-The profile retrieves the hidden Docker Hub parameters on the node with `geni-get`, so they do not need to appear in the generated `execute` command line.
+The profile stores `dockerhub_token` as an encrypted CloudLab password resource and passes it into the Ansible playbook via `source="password"`. The token is no longer fetched with `geni-get`, and it does not need to appear in the generated bootstrap command line.
 
 ## How to create a Docker Hub access token
 
@@ -95,7 +97,7 @@ At instantiate time, fill in:
 - `container_ssh_host_port`: `2222` by default, or `0` to disable SSH forwarding
 - `container_published_ports`: optional extra mappings like `8080:8080,9000:9000`
 - `dockerhub_user`: your Docker Hub username
-- `dockerhub_token`: the personal access token you just created
+- `dockerhub_token`: the personal access token you just created; this is stored as an encrypted password resource
 
 Example `docker_cmd` values:
 

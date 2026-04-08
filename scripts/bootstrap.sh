@@ -15,8 +15,8 @@ DOCKER_CMD="${8:-sleep infinity}"
 DOCKER_NETWORK_MODE="${9:-bridge}"
 CONTAINER_SSH_HOST_PORT="${10:-2222}"
 CONTAINER_PUBLISHED_PORTS="${11:-}"
-DOCKERHUB_USER=""
-DOCKERHUB_TOKEN=""
+DOCKERHUB_USER="${DOCKERHUB_USER:-}"
+DOCKERHUB_TOKEN="${DOCKERHUB_TOKEN:-}"
 
 if [ "$(id -u)" -eq 0 ]; then
   SUDO=""
@@ -66,11 +66,6 @@ install_docker() {
 }
 
 docker_login_if_needed() {
-  if command -v geni-get >/dev/null 2>&1; then
-    DOCKERHUB_USER="$(geni-get "param dockerhub_user" 2>/dev/null || true)"
-    DOCKERHUB_TOKEN="$(geni-get "param dockerhub_token" 2>/dev/null || true)"
-  fi
-
   if [ -n "${DOCKERHUB_USER}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
     log "Logging into Docker Hub for private image access"
     ${SUDO} mkdir -p /root/.docker

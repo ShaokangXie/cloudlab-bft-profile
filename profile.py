@@ -2,19 +2,16 @@
 
 Each node:
 - joins the same private LAN
-- installs Docker on first boot
-- optionally logs into Docker Hub using hidden parameters
+- runs an Ansible playbook during startup
+- optionally logs into Docker Hub using an encrypted password resource
 - pulls the requested image
 - starts one container with node-specific environment variables
 """
 
 import geni.portal as portal
 import geni.rspec.pg as rspec
-
-
-def shq(value):
-    """Single-quote a string for safe shell transport."""
-    return "'" + str(value).replace("'", "'\"'\"'") + "'"
+import geni.rspec.igext as igext
+import geni.rspec.emulab.ansible as ansible
 
 
 pc = portal.Context()
@@ -96,10 +93,10 @@ pc.defineParameter(
     portal.ParameterType.STRING,
     "",
     advanced=True,
+    hide=True,
 )
 
 params = pc.bindParameters()
-pc.verifyParameters()
 
 if params.num_nodes < 1:
     pc.reportError(
@@ -122,12 +119,64 @@ if params.docker_network_mode not in ["bridge", "host"]:
         )
     )
 
+if bool(params.dockerhub_user) != bool(params.dockerhub_token):
+    pc.reportError(
+        portal.ParameterError(
+            "Provide both dockerhub_user and dockerhub_token, or leave both empty",
+            ["dockerhub_user", "dockerhub_token"],
+        )
+    )
+
+pc.verifyParameters()
+
 request = pc.makeRequestRSpec()
 
 lan = request.LAN("bft-lan")
 
 node_ips = ["10.10.1.{}".format(i + 1) for i in range(params.num_nodes)]
 all_peers = ",".join(node_ips)
+
+request.addResource(ansible.Playbook("bootstrap.yml", path="ansible", become="root"))
+
+request.addResource(ansible.Override("num_nodes", value=str(params.num_nodes)))
+request.addResource(ansible.Override("peers_csv", value=all_peers))
+request.addResource(ansible.Override("docker_image", value=params.docker_image))
+request.addResource(ansible.Override("docker_cmd", value=params.docker_cmd))
+request.addResource(ansible.Override("container_prefix", value=params.container_prefix))
+request.addResource(
+    ansible.Override(
+        "mount_repository",
+        value="1" if params.mount_repository else "0",
+    )
+)
+request.addResource(
+    ansible.Override("docker_network_mode", value=params.docker_network_mode)
+)
+request.addResource(
+    ansible.Override(
+        "container_ssh_host_port",
+        value=str(params.container_ssh_host_port),
+    )
+)
+request.addResource(
+    ansible.Override(
+        "container_published_ports",
+        value=params.container_published_ports,
+    )
+)
+request.addResource(ansible.Override("dockerhub_user", value=params.dockerhub_user))
+
+if params.dockerhub_token:
+    request.addResource(igext.Password(name="dockerhub_token", text=params.dockerhub_token))
+
+request.addResource(
+    ansible.Override(
+        "dockerhub_token",
+        source="password",
+        source_name="dockerhub_token",
+        on_empty=False,
+    )
+)
 
 for i in range(params.num_nodes):
     node = request.RawPC("node{}".format(i))
@@ -140,27 +189,7 @@ for i in range(params.num_nodes):
     iface.addAddress(rspec.IPv4Address(node_ips[i], "255.255.255.0"))
     lan.addInterface(iface)
 
-    container_name = "{}-{}".format(params.container_prefix, i)
-
-    cmd = (
-        "/bin/bash /local/repository/scripts/bootstrap.sh "
-        "{node_index} {total_nodes} {node_ip} {peers_csv} {docker_image} "
-        "{container_name} {mount_repository} {docker_cmd} "
-        "{docker_network_mode} {container_ssh_host_port} {container_published_ports}"
-    ).format(
-        node_index=i,
-        total_nodes=params.num_nodes,
-        node_ip=shq(node_ips[i]),
-        peers_csv=shq(all_peers),
-        docker_image=shq(params.docker_image),
-        container_name=shq(container_name),
-        mount_repository="1" if params.mount_repository else "0",
-        docker_cmd=shq(params.docker_cmd),
-        docker_network_mode=shq(params.docker_network_mode),
-        container_ssh_host_port=params.container_ssh_host_port,
-        container_published_ports=shq(params.container_published_ports),
-    )
-
-    node.addService(rspec.Execute(shell="bash", command=cmd))
+    node.addOverride(ansible.Override("node_index", value=str(i)))
+    node.addOverride(ansible.Override("node_ip", value=node_ips[i]))
 
 pc.printRequestRSpec(request)
