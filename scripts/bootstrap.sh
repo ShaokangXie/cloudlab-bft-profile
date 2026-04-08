@@ -132,6 +132,7 @@ configure_container_ssh() {
   local ssh_port="$1"
   local escaped_authorized_key
   escaped_authorized_key=$(printf "%s" "${AUTHORIZED_KEY}" | sed "s/'/'\"'\"'/g")
+  local started=0
 
   if [ "${CONTAINER_SSH_PORT}" = "0" ]; then
     log "Container SSH setup disabled because container_ssh_host_port=0"
@@ -148,7 +149,25 @@ configure_container_ssh() {
   ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "grep -qxF '${escaped_authorized_key}' /root/.ssh/authorized_keys 2>/dev/null || printf '%s\n' '${escaped_authorized_key}' >> /root/.ssh/authorized_keys; chmod 600 /root/.ssh/authorized_keys"
   ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "ssh-keygen -A >/dev/null 2>&1 || true"
   ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "pkill -f '/usr/sbin/sshd -D' >/dev/null 2>&1 || true"
-  ${SUDO} docker exec -d "${CONTAINER_NAME}" /usr/sbin/sshd -D -p "${ssh_port}" >/dev/null
+
+  # Starting sshd via `docker exec -d` proved flaky during CloudLab startup.
+  # Let the container shell background it directly, then wait for the port.
+  ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "(/usr/sbin/sshd -D -e -p '${ssh_port}' >/tmp/container-sshd.log 2>&1 &)"
+
+  for _ in $(seq 1 15); do
+    if ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "ps -ef | grep '[s]shd: /usr/sbin/sshd -D -e -p ${ssh_port}' >/dev/null"; then
+      started=1
+      break
+    fi
+    sleep 1
+  done
+
+  if [ "${started}" -ne 1 ]; then
+    log "Container SSH failed to stay up on port ${ssh_port}"
+    ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "tail -n 50 /tmp/container-sshd.log 2>/dev/null || true"
+    return 1
+  fi
+
   log "Container SSH started on port ${ssh_port}"
 }
 
