@@ -159,15 +159,15 @@ def build_bootstrap_command(node_index, node_ip):
         params.dockerhub_token,
     ]
     quoted_args = " ".join(shell_quote(arg) for arg in args)
-    return (
+    command_prefix = (
         "for _ in $(seq 1 60); do "
         "if [ -f /local/repository/scripts/bootstrap.sh ]; then break; fi; "
         "sleep 2; "
         "done; "
         "[ -f /local/repository/scripts/bootstrap.sh ] || "
         "{ echo 'bootstrap.sh was not cloned to /local/repository' >&2; exit 1; }; "
-        "/bin/bash /local/repository/scripts/bootstrap.sh {}".format(quoted_args)
     )
+    return command_prefix + "/bin/bash /local/repository/scripts/bootstrap.sh " + quoted_args
 
 for i in range(params.num_nodes):
     node = request.RawPC("node{}".format(i))
