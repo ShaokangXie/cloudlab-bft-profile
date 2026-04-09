@@ -151,8 +151,8 @@ configure_container_ssh() {
   ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "pkill -f '/usr/sbin/sshd -D' >/dev/null 2>&1 || true"
 
   # Starting sshd via `docker exec -d` proved flaky during CloudLab startup.
-  # Let the container shell background it directly, then wait for the port.
-  ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "(/usr/sbin/sshd -D -e -p '${ssh_port}' >/tmp/container-sshd.log 2>&1 &)"
+  # Use nohup so the process survives the exec session cleanly.
+  ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "nohup /usr/sbin/sshd -D -e -p '${ssh_port}' >/tmp/container-sshd.log 2>&1 </dev/null &"
 
   for _ in $(seq 1 15); do
     if ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "ps -ef | grep '[s]shd: /usr/sbin/sshd -D -e -p ${ssh_port}' >/dev/null"; then
