@@ -32,7 +32,7 @@ pc.defineParameter(
     "docker_cmd",
     "Command to run inside the container",
     portal.ParameterType.STRING,
-    "sleep infinity",
+    "/usr/sbin/sshd -D -e -p 2222",
 )
 
 pc.defineParameter(

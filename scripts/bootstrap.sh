@@ -132,7 +132,6 @@ configure_container_ssh() {
   local ssh_port="$1"
   local escaped_authorized_key
   escaped_authorized_key=$(printf "%s" "${AUTHORIZED_KEY}" | sed "s/'/'\"'\"'/g")
-  local started=0
 
   if [ "${CONTAINER_SSH_PORT}" = "0" ]; then
     log "Container SSH setup disabled because container_ssh_host_port=0"
@@ -144,31 +143,15 @@ configure_container_ssh() {
     return 0
   fi
 
-  log "Configuring container SSH on port ${ssh_port}"
+  # sshd is expected to run as the container's main process (see docker_cmd
+  # in profile.py). This function only provisions host keys and authorized_keys;
+  # it no longer starts sshd itself.
+  log "Provisioning container SSH credentials for port ${ssh_port}"
   retry ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "mkdir -p /run/sshd /root/.ssh && chmod 700 /root/.ssh && touch /root/.ssh/authorized_keys"
   ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "grep -qxF '${escaped_authorized_key}' /root/.ssh/authorized_keys 2>/dev/null || printf '%s\n' '${escaped_authorized_key}' >> /root/.ssh/authorized_keys; chmod 600 /root/.ssh/authorized_keys"
   ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "ssh-keygen -A >/dev/null 2>&1 || true"
-  ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "pkill -f '/usr/sbin/sshd -D' >/dev/null 2>&1 || true"
 
-  # Starting sshd via `docker exec -d` proved flaky during CloudLab startup.
-  # Use nohup so the process survives the exec session cleanly.
-  ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "nohup /usr/sbin/sshd -D -e -p '${ssh_port}' >/tmp/container-sshd.log 2>&1 </dev/null &"
-
-  for _ in $(seq 1 15); do
-    if ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "ps -ef | grep '[s]shd: /usr/sbin/sshd -D -e -p ${ssh_port}' >/dev/null"; then
-      started=1
-      break
-    fi
-    sleep 1
-  done
-
-  if [ "${started}" -ne 1 ]; then
-    log "Container SSH failed to stay up on port ${ssh_port}"
-    ${SUDO} docker exec "${CONTAINER_NAME}" sh -lc "tail -n 50 /tmp/container-sshd.log 2>/dev/null || true"
-    return 1
-  fi
-
-  log "Container SSH started on port ${ssh_port}"
+  log "Container SSH credentials installed (sshd is managed as container main process on port ${ssh_port})"
 }
 
 install_boot_service() {
